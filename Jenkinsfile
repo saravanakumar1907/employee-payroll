@@ -19,17 +19,52 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-
-                    echo "Checking Docker Compose configuration..."
                     test -f docker-compose.yml -o -f compose.yml
-
-                    echo "Checking frontend..."
                     test -d frontend
-
-                    echo "Checking backend..."
                     test -d backend
+                    echo "Project files verified."
+                '''
+            }
+        }
 
-                    echo "Project file verification successful."
+        stage('Build and Deploy') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'payroll-deploy-ssh',
+                        keyFileVariable: 'SSH_KEY',
+                        usernameVariable: 'SSH_USER'
+                    )
+                ]) {
+                    sh '''
+                        set -eu
+
+                        echo "Deploying application on EC2..."
+                        ssh \
+                            -i "$SSH_KEY" \
+                            -o IdentitiesOnly=yes \
+                            -o BatchMode=yes \
+                            -o StrictHostKeyChecking=yes \
+                            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+                            "$SSH_USER@172.17.0.1"
+                    '''
+                }
+            }
+        }
+
+        stage('Test API') {
+            steps {
+                sh '''
+                    set -eu
+                    echo "Checking Employee Payroll API..."
+
+                    curl --fail --silent --show-error \
+                        --retry 5 \
+                        --retry-delay 2 \
+                        http://16.4.140.3:3000/api/employees
+
+                    echo
+                    echo "API test passed."
                 '''
             }
         }
@@ -37,7 +72,7 @@ pipeline {
 
     post {
         success {
-            echo 'Employee Payroll CI pipeline completed successfully.'
+            echo 'Employee Payroll CI/CD pipeline completed successfully.'
         }
         failure {
             echo 'Pipeline failed. Review the console output.'
